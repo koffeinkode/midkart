@@ -453,6 +453,40 @@ let pins = JSON.parse(JSON.stringify(DEFAULT_PINS));
 let regions = [];
 let regionCounter = 0;
 let markerMap = {};
+let _mapReady = false;
+
+/* ============================================================
+   PERSISTENCE
+============================================================ */
+const STORAGE_KEY = 'midkart-v1';
+
+function saveState() {
+  if (!_mapReady) return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      pins, regions, regionCounter, currentStyle, theme, layerState,
+      mapCenter: map.getCenter(), mapZoom: map.getZoom()
+    }));
+  } catch(e) {}
+}
+
+function loadSavedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+(function applyPreload() {
+  const s = loadSavedState();
+  if (!s) return;
+  if (s.pins)        pins = s.pins;
+  if (s.regions)     regions = s.regions;
+  if (s.regionCounter) regionCounter = s.regionCounter;
+  if (s.theme)       theme = s.theme;
+  if (s.layerState)  layerState = s.layerState;
+  if (s.currentStyle) currentStyle = s.currentStyle;
+})();
 
 /* ============================================================
    SVG PIN SHAPES
@@ -509,23 +543,33 @@ function miniSVG(style, color) { return pinSVG(style, color, 18); }
 /* ============================================================
    MAP INIT
 ============================================================ */
+const _saved = loadSavedState();
 const map = new maplibregl.Map({
-  container: 'map', style: MAP_STYLES.midgard,
-  center: [3.5, 58], zoom: 4.2, minZoom: 2, maxZoom: 14,
+  container: 'map', style: MAP_STYLES[currentStyle] || MAP_STYLES.midgard,
+  center: _saved?.mapCenter ? [_saved.mapCenter.lng, _saved.mapCenter.lat] : [3.5, 58],
+  zoom: _saved?.mapZoom ?? 4.2, minZoom: 2, maxZoom: 14,
   preserveDrawingBuffer: true,
 });
 map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 map.on('load', () => {
+  document.querySelectorAll('.ms-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.ms-btn[onclick*="${currentStyle}"]`)?.classList.add('active');
+  showMidgardSections(currentStyle === 'midgard');
   applyTheme();
   buildLayerGroups();
   applyLayerState();
   buildLayerUI();
-  showMidgardSections(true);
+  ['ocean','land','text'].forEach(k => {
+    document.getElementById(`p-${k}`).value = theme[k];
+    document.getElementById(`h-${k}`).value = theme[k];
+  });
   renderAllMarkers();
   renderPinList();
   restoreRegions();
+  _mapReady = true;
 });
+map.on('moveend', saveState);
 
 /* ============================================================
    MIDGARD THEME (colors)
@@ -576,6 +620,7 @@ function setTheme(key, val) {
   document.getElementById(`p-${key}`).value = val;
   document.getElementById(`h-${key}`).value = val;
   if (currentStyle === 'midgard') applyTheme();
+  saveState();
 }
 function resetTheme() {
   theme = { ...DEFAULT_THEME };
@@ -584,6 +629,7 @@ function resetTheme() {
     document.getElementById(`h-${k}`).value = theme[k];
   });
   if (currentStyle === 'midgard') applyTheme();
+  saveState();
 }
 
 /* ============================================================
@@ -672,6 +718,7 @@ function setMapStyle(style, btn) {
     }
     renderAllMarkers();
     restoreRegions();
+    saveState();
   });
 }
 
@@ -782,6 +829,7 @@ function renderPinList() {
   const list = document.getElementById('pin-list');
   list.innerHTML = '';
   pins.forEach(p => list.appendChild(makePinCard(p)));
+  saveState();
 }
 function makePinCard(pin) {
   const card = document.createElement('div');
@@ -963,14 +1011,18 @@ function addPinCenter() {
    RESET ALL
 ============================================================ */
 function resetAll() {
-  if (!confirm('Nullstille alle pinner, farger og kartlag til standard?')) return;
-  pins = JSON.parse(JSON.stringify(DEFAULT_PINS));
+  if (!confirm('Nullstille alt og slette lagret arbeid?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  pins = [];
+  regions.forEach(r => { try { if (map.getLayer(r.id)) map.removeLayer(r.id); if (map.getSource(r.id)) map.removeSource(r.id); } catch(e) {} });
+  regions = []; regionCounter = 0;
   theme = { ...DEFAULT_THEME };
   layerState = { ...DEFAULT_LAYER_STATE };
   currentStyle = 'midgard';
   document.querySelectorAll('.ms-btn').forEach((b,i) => b.classList.toggle('active', i===0));
   ['ocean','land','text'].forEach(k => { document.getElementById(`p-${k}`).value=theme[k]; document.getElementById(`h-${k}`).value=theme[k]; });
   showMidgardSections(true);
+  renderRegionList();
   map.setStyle(MAP_STYLES.midgard);
   map.once('styledata', () => {
     applyTheme();
@@ -1163,7 +1215,7 @@ function highlightRegionItem(items) {
 
 async function fetchRegionSuggestions(q) {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=geojson&polygon_geojson=1&limit=6&countrycodes=no`);
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=geojson&polygon_geojson=1&limit=6`);
     const data = await r.json();
     regionSuggestions = (data.features || []).filter(f => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
     if (!regionSuggestions.length) { hideRegionResults(); return; }
@@ -1251,6 +1303,7 @@ function updateRegionColor(id, color) {
   r.color = color;
   try { map.setPaintProperty(id, 'fill-color', color); } catch(e) {}
   document.getElementById(`rswatch-${id}`).style.background = color;
+  saveState();
 }
 function updateRegionOpacity(id, val) {
   const r = regions.find(x => x.id === id);
@@ -1259,6 +1312,7 @@ function updateRegionOpacity(id, val) {
   try { map.setPaintProperty(id, 'fill-opacity', r.opacity); } catch(e) {}
   const lbl = document.getElementById(`ropval-${id}`);
   if (lbl) lbl.textContent = val + '%';
+  saveState();
 }
 
 function renderRegionList() {
@@ -1280,6 +1334,7 @@ function renderRegionList() {
       </div>`;
     list.appendChild(row);
   });
+  saveState();
 }
 
 /* ============================================================
