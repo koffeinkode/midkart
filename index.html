@@ -346,7 +346,7 @@
       <div class="search-wrap">
         <div class="search-row">
           <input type="text" class="search-input" id="search-input" placeholder="Søk etter stedsnavn…"
-            oninput="onSearchInput(this.value)" onkeydown="if(event.key==='Enter')doSearch()" autocomplete="off">
+            oninput="onSearchInput(this.value)" onkeydown="onSearchKey(event)" autocomplete="off">
           <button class="search-btn" onclick="doSearch()">SØK</button>
         </div>
         <div class="search-results" id="search-results"></div>
@@ -447,6 +447,8 @@ let currentStyle = 'midgard';
 let exportW = 1920, exportH = 1080, exportFmt = 'jpeg';
 let frameActive = false;
 let searchTimer = null;
+let searchResults = [];
+let searchIdx = -1;
 const DEFAULT_PINS = [];
 let pins = JSON.parse(JSON.stringify(DEFAULT_PINS));
 let regions = [];
@@ -756,8 +758,20 @@ function setMapStyle(style, btn) {
 ============================================================ */
 function onSearchInput(val) {
   clearTimeout(searchTimer);
+  searchIdx = -1;
   if (val.length < 2) { hideResults(); return; }
   searchTimer = setTimeout(doSearch, 450);
+}
+function onSearchKey(e) {
+  const items = document.querySelectorAll('#search-results .sr-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); searchIdx = Math.min(searchIdx + 1, items.length - 1); highlightSearchItem(items); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); searchIdx = Math.max(searchIdx - 1, 0); highlightSearchItem(items); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (searchIdx >= 0 && searchResults[searchIdx]) { addPinFromResult(searchResults[searchIdx]); } else { doSearch(); } }
+  else if (e.key === 'Escape') { hideResults(); }
+}
+function highlightSearchItem(items) {
+  items.forEach((el, i) => el.classList.toggle('active', i === searchIdx));
+  if (items[searchIdx]) items[searchIdx].scrollIntoView({ block: 'nearest' });
 }
 async function doSearch() {
   const q = document.getElementById('search-input').value.trim();
@@ -768,6 +782,8 @@ async function doSearch() {
   } catch(e) { showResults([]); }
 }
 function showResults(data) {
+  searchResults = data;
+  searchIdx = -1;
   const el = document.getElementById('search-results');
   el.innerHTML = '';
   el.classList.add('vis');
@@ -804,19 +820,28 @@ function renderAllMarkers() {
   pins.forEach(p => { if (p.visible) addMarker(p); });
 }
 function addMarker(pin) {
-  const scale = (pin.pinSize || 32) / 27;
-  let m;
+  const s = pin.pinSize || 32;
+  let m, pinW, pinH, midY;
 
   if (pin.style === 'teardrop') {
-    m = new maplibregl.Marker({ color: pin.color, scale, draggable: true })
+    const h = Math.round(s * 1.42);
+    const el = document.createElement('div');
+    el.style.cssText = `width:${s}px;height:${h}px;position:relative;overflow:visible;cursor:pointer;`;
+    el.innerHTML = pinSVG('teardrop', pin.color, s);
+    m = new maplibregl.Marker({ element: el, anchor: 'bottom', draggable: true })
       .setLngLat([pin.lng, pin.lat]).addTo(map);
+    pinW = s;
+    pinH = h;
+    midY = Math.round(h * 46 / 142);
   } else {
-    const s = pin.pinSize || 32;
     const el = document.createElement('div');
     el.style.cssText = `width:${s}px;height:${s}px;position:relative;overflow:visible;cursor:pointer;`;
     el.innerHTML = pinSVG(pin.style, pin.color, s);
     m = new maplibregl.Marker({ element: el, anchor: 'center', draggable: true })
       .setLngLat([pin.lng, pin.lat]).addTo(map);
+    pinW = s;
+    pinH = s;
+    midY = Math.round(s * 0.5);
   }
 
   const el = m.getElement();
@@ -827,9 +852,6 @@ function addMarker(pin) {
     const lbl = document.createElement('div');
     lbl.className = 'pin-lbl';
     lbl.textContent = pin.name;
-    const pinW = pin.style === 'teardrop' ? Math.round(27 * scale) : (pin.pinSize || 32);
-    const pinH = pin.style === 'teardrop' ? Math.round(41 * scale) : (pin.pinSize || 32);
-    const midY = pin.style === 'teardrop' ? Math.round(12 * scale) : Math.round(pinH * 0.5);
     const gap = 8;
     let pos = '';
     switch (pin.labelPos) {
@@ -843,7 +865,7 @@ function addMarker(pin) {
   }
 
   el.addEventListener('click', e => { e.stopPropagation(); expandPin(pin.id); });
-  m.on('dragend', () => { const ll = m.getLngLat(); pin.lng = ll.lng; pin.lat = ll.lat; });
+  m.on('dragend', () => { const ll = m.getLngLat(); pin.lng = ll.lng; pin.lat = ll.lat; saveState(); });
   markerMap[pin.id] = m;
 }
 function updateMarker(pin) {
