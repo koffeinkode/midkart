@@ -856,7 +856,7 @@ function addPinFromResult(r) {
   hideResults();
   document.getElementById('search-input').value = '';
   const id = 'pin-' + Date.now();
-  const pin = { id, name: r.display_name.split(',')[0], lat: parseFloat(r.lat), lng: parseFloat(r.lon), style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelBgColor:'#ffffff', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14, customImg:null };
+  const pin = { id, name: r.display_name.split(',')[0], lat: parseFloat(r.lat), lng: parseFloat(r.lon), style:'teardrop', color:'#E03535', labelColor:'#ffffff', labelBgColor:'#1a1a1a', labelPos:'right', showLabel:false, labelBox:false, visible:true, pinSize:32, fontSize:14, customImg:null };
   pins.push(pin);
   renderPinList();
   updateMarker(pin);
@@ -1158,7 +1158,7 @@ function addPinCenter() {
   const visY = mapEl.clientHeight / 2;
   const lngLat = map.unproject([visX, visY]);
   const id = 'pin-' + Date.now();
-  const pin = { id, name:'Nytt sted', lat:lngLat.lat, lng:lngLat.lng, style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelBgColor:'#ffffff', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14, customImg:null };
+  const pin = { id, name:'Nytt sted', lat:lngLat.lat, lng:lngLat.lng, style:'teardrop', color:'#E03535', labelColor:'#ffffff', labelBgColor:'#1a1a1a', labelPos:'right', showLabel:false, labelBox:false, visible:true, pinSize:32, fontSize:14, customImg:null };
   pins.push(pin);
   renderPinList();
   updateMarker(pin);
