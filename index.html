@@ -364,6 +364,20 @@
 
   </div>
 
+  <!-- Bildebibliotek -->
+  <div class="section" data-sec="bilder">
+    <div class="sec-title" onclick="toggleSection('bilder')"><span class="sec-title-text">Bildebibliotek</span><span class="sec-chevron">▾</span></div>
+    <div id="image-library"></div>
+    <div style="display:flex;gap:5px;margin-top:6px">
+      <input type="text" class="search-input" id="img-name" placeholder="Navn på bilde…" style="flex:1;font-size:10px"
+        onkeydown="if(event.key==='Enter')document.getElementById('img-file-input').click()">
+      <label class="search-btn" style="cursor:pointer;white-space:nowrap">
+        LAST OPP
+        <input type="file" id="img-file-input" accept="image/png,image/jpeg,image/gif,image/svg+xml" style="display:none" onchange="uploadPinImage(this)">
+      </label>
+    </div>
+  </div>
+
   <!-- Global pinstil -->
   <div class="section" style="border-bottom:none;background:var(--bg)" data-sec="global">
     <div class="sec-title" onclick="toggleSection('global')"><span class="sec-title-text">Global pinstil — alle pinner</span><span class="sec-chevron">▾</span></div>
@@ -422,6 +436,7 @@
 ============================================================ */
 const SWATCHES = ['#1E6B7A','#72C4CC','#A8D5E2','#B8E4D8','#5C78B0','#E05050','#F5C0C0','#F5E8A8','#FFFFFF','#1a1a1a'];
 const PIN_STYLES = ['teardrop','circle','diamond','star','square'];
+const CUSTOM_STYLE = 'custom';
 const MAP_STYLES = {
   midgard: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
 };
@@ -459,6 +474,7 @@ let markerMap = {};
 let _mapReady = false;
 let presets = [];
 let activePresetId = null;
+let pinImages = [];
 
 /* ============================================================
    PERSISTENCE
@@ -469,7 +485,7 @@ function saveState() {
   if (!_mapReady) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      pins, regions, regionCounter, presets, activePresetId, theme, layerState,
+      pins, regions, regionCounter, presets, activePresetId, pinImages, theme, layerState,
       mapCenter: map.getCenter(), mapZoom: map.getZoom()
     }));
   } catch(e) {}
@@ -492,7 +508,55 @@ function loadSavedState() {
   if (s.layerState)  layerState = s.layerState;
   if (s.presets)        presets = s.presets;
   if (s.activePresetId !== undefined) activePresetId = s.activePresetId;
+  if (s.pinImages)      pinImages = s.pinImages;
 })();
+
+/* ============================================================
+   IMAGE LIBRARY
+============================================================ */
+function uploadPinImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 400000) { alert('Bildet er over 400KB. Prøv å komprimere det først.'); input.value=''; return; }
+  const name = document.getElementById('img-name').value.trim() || file.name.replace(/\.[^.]+$/, '');
+  const reader = new FileReader();
+  reader.onload = e => {
+    const id = 'img-' + Date.now();
+    pinImages.push({ id, name, dataUrl: e.target.result });
+    document.getElementById('img-name').value = '';
+    input.value = '';
+    renderImageLibrary();
+    saveState();
+  };
+  reader.readAsDataURL(file);
+}
+
+function deleteImage(id) {
+  pinImages = pinImages.filter(i => i.id !== id);
+  pins.forEach(p => { if (p.customImg === id) { p.style = 'teardrop'; p.customImg = null; updateMarker(p); } });
+  renderImageLibrary();
+  renderPinList();
+  saveState();
+}
+
+function renderImageLibrary() {
+  const list = document.getElementById('image-library');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!pinImages.length) {
+    list.innerHTML = '<div style="font-size:10px;color:var(--muted);padding:2px 0 4px">Ingen bilder lastet opp ennå</div>';
+    return;
+  }
+  pinImages.forEach(img => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:7px;margin-bottom:5px;';
+    row.innerHTML = `
+      <img src="${img.dataUrl}" style="width:26px;height:26px;object-fit:contain;flex-shrink:0;border:1px solid var(--divider)">
+      <span style="flex:1;font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${img.name}</span>
+      <button class="pin-vis-btn" onclick="deleteImage('${img.id}')">×</button>`;
+    list.appendChild(row);
+  });
+}
 
 /* ============================================================
    SECTION COLLAPSE
@@ -578,7 +642,13 @@ function pinSVG(style, color, size) {
   }
   return '';
 }
-function miniSVG(style, color) { return pinSVG(style, color, 18); }
+function miniSVG(style, color, imgId) {
+  if (style === 'custom' && imgId) {
+    const img = pinImages.find(i => i.id === imgId);
+    if (img) return `<img src="${img.dataUrl}" style="width:18px;height:18px;object-fit:contain;display:block">`;
+  }
+  return pinSVG(style, color, 18);
+}
 
 /* ============================================================
    MAP INIT
@@ -605,6 +675,7 @@ map.on('load', () => {
   renderPinList();
   restoreRegions();
   renderPresetList();
+  renderImageLibrary();
   initSections();
   _mapReady = true;
 });
@@ -785,7 +856,7 @@ function addPinFromResult(r) {
   hideResults();
   document.getElementById('search-input').value = '';
   const id = 'pin-' + Date.now();
-  const pin = { id, name: r.display_name.split(',')[0], lat: parseFloat(r.lat), lng: parseFloat(r.lon), style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14 };
+  const pin = { id, name: r.display_name.split(',')[0], lat: parseFloat(r.lat), lng: parseFloat(r.lon), style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelBgColor:'#ffffff', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14, customImg:null };
   pins.push(pin);
   renderPinList();
   updateMarker(pin);
@@ -812,18 +883,27 @@ function addMarker(pin) {
     el.innerHTML = pinSVG('teardrop', pin.color, s);
     m = new maplibregl.Marker({ element: el, anchor: 'bottom', draggable: true })
       .setLngLat([pin.lng, pin.lat]).addTo(map);
-    pinW = s;
-    pinH = h;
-    midY = Math.round(h * 46 / 142);
+    pinW = s; pinH = h; midY = Math.round(h * 46 / 142);
+  } else if (pin.style === 'custom' && pin.customImg) {
+    const imgData = pinImages.find(i => i.id === pin.customImg);
+    const el = document.createElement('div');
+    el.style.cssText = `width:${s}px;height:${s}px;position:relative;overflow:visible;cursor:pointer;`;
+    if (imgData) {
+      const img = document.createElement('img');
+      img.src = imgData.dataUrl;
+      img.style.cssText = `width:${s}px;height:${s}px;object-fit:contain;display:block;`;
+      el.appendChild(img);
+    }
+    m = new maplibregl.Marker({ element: el, anchor: 'center', draggable: true })
+      .setLngLat([pin.lng, pin.lat]).addTo(map);
+    pinW = s; pinH = s; midY = Math.round(s * 0.5);
   } else {
     const el = document.createElement('div');
     el.style.cssText = `width:${s}px;height:${s}px;position:relative;overflow:visible;cursor:pointer;`;
     el.innerHTML = pinSVG(pin.style, pin.color, s);
     m = new maplibregl.Marker({ element: el, anchor: 'center', draggable: true })
       .setLngLat([pin.lng, pin.lat]).addTo(map);
-    pinW = s;
-    pinH = s;
-    midY = Math.round(s * 0.5);
+    pinW = s; pinH = s; midY = Math.round(s * 0.5);
   }
 
   const el = m.getElement();
@@ -842,7 +922,8 @@ function addMarker(pin) {
       case 'top':    pos = `bottom:${pinH+gap}px;left:50%;transform:translateX(-50%);`; break;
       case 'bottom': pos = `top:${pinH+gap}px;left:50%;transform:translateX(-50%);`; break;
     }
-    const box = pin.labelBox ? 'background:rgba(255,255,255,0.92);padding:0.2em 0.5em;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.15);' : '';
+    const bgColor = pin.labelBgColor || '#ffffff';
+    const box = pin.labelBox ? `background:${bgColor};padding:0.2em 0.5em;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.15);` : '';
     lbl.style.cssText = `color:${pin.labelColor||'#1a1a1a'};font-size:${pin.fontSize||14}px;${box}${pos}`;
     el.appendChild(lbl);
   }
@@ -911,6 +992,9 @@ function makePinCard(pin) {
       <div class="pin-style-row">
         ${PIN_STYLES.map(s=>`<button class="ps-btn ${s===pin.style?'on':''}" id="ps-${pin.id}-${s}" onclick="updateStyle('${pin.id}','${s}')" title="${s}"><span>${miniSVG(s,pin.color)}</span></button>`).join('')}
       </div>
+      ${pinImages.length ? `<div class="pin-style-row" style="margin-top:4px" id="imgrow-${pin.id}">
+        ${pinImages.map(img=>`<button class="ps-btn ${pin.style==='custom'&&pin.customImg===img.id?'on':''}" id="ps-${pin.id}-img-${img.id}" onclick="updateStyleCustom('${pin.id}','${img.id}')" title="${img.name}" style="padding:2px"><img src="${img.dataUrl}" style="width:100%;height:100%;object-fit:contain;display:block"></button>`).join('')}
+      </div>` : ''}
     </div>
     <div class="ed-row">
       <div class="toggle-row-ed">
@@ -922,12 +1006,17 @@ function makePinCard(pin) {
       </div>
     </div>
     <div class="ed-row" id="lpr-${pin.id}" style="${pin.showLabel?'':'opacity:0.3;pointer-events:none'}">
-      <div class="toggle-row-ed" style="margin-bottom:8px">
+      <div class="toggle-row-ed" style="margin-bottom:6px">
         <span class="toggle-lbl">Boks rundt tekst</span>
         <label class="tog">
           <input type="checkbox" ${pin.labelBox?'checked':''} onchange="updateLabelBox('${pin.id}',this.checked)">
           <div class="tog-track"></div>
         </label>
+      </div>
+      <div class="hex-row" style="margin-bottom:8px">
+        <span style="font-size:9px;color:var(--muted);flex:1">Boks-farge</span>
+        <input type="color" class="hex-cp" value="${pin.labelBgColor||'#ffffff'}" id="lbg-${pin.id}" oninput="updateLabelBgColor('${pin.id}',this.value)">
+        <div class="hex-dot" id="lbgd-${pin.id}" style="background:${pin.labelBgColor||'#ffffff'}"></div>
       </div>
       <div class="ed-lbl">Plassering av navn</div>
       <div class="lp-grid">
@@ -958,6 +1047,7 @@ function makePinCard(pin) {
         <span class="fs-val" id="fs-val-${pin.id}">${pin.fontSize||14}px</span>
       </div>
     </div>
+    <button class="ghost-btn" onclick="copyStyleToAll('${pin.id}')">↑ Bruk stil på alle pinner</button>
     <button class="del-btn" onclick="deletePin('${pin.id}')">Slett pin</button>`;
   card.appendChild(body);
   return card;
@@ -1004,6 +1094,29 @@ function updateLabelBox(id, val) {
   const p = getPin(id); p.labelBox = val;
   updateMarker(p);
 }
+function updateLabelBgColor(id, color) {
+  const p = getPin(id); p.labelBgColor = color;
+  const dot = document.getElementById(`lbgd-${id}`); if (dot) dot.style.background = color;
+  updateMarker(p);
+}
+function updateStyleCustom(id, imgId) {
+  const p = getPin(id); p.style = 'custom'; p.customImg = imgId;
+  PIN_STYLES.forEach(s => document.getElementById(`ps-${id}-${s}`)?.classList.remove('on'));
+  pinImages.forEach(img => document.getElementById(`ps-${id}-img-${img.id}`)?.classList.remove('on'));
+  const btn = document.getElementById(`ps-${id}-img-${imgId}`); if (btn) btn.classList.add('on');
+  document.getElementById(`prev-${id}`).innerHTML = miniSVG('custom', p.color, p.customImg);
+  updateMarker(p);
+}
+function copyStyleToAll(id) {
+  const src = getPin(id);
+  const styleProps = ['style','color','pinSize','fontSize','labelColor','labelBgColor','labelBox','customImg'];
+  pins.forEach(p => {
+    if (p.id === id) return;
+    styleProps.forEach(k => { p[k] = src[k]; });
+    updateMarker(p);
+  });
+  renderPinList();
+}
 function updateShowLabel(id, show) {
   const p = getPin(id); p.showLabel = show;
   for (const rid of [`lpr-${id}`, `fs-row-${id}`]) {
@@ -1045,7 +1158,7 @@ function addPinCenter() {
   const visY = mapEl.clientHeight / 2;
   const lngLat = map.unproject([visX, visY]);
   const id = 'pin-' + Date.now();
-  const pin = { id, name:'Nytt sted', lat:lngLat.lat, lng:lngLat.lng, style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14 };
+  const pin = { id, name:'Nytt sted', lat:lngLat.lat, lng:lngLat.lng, style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelBgColor:'#ffffff', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14, customImg:null };
   pins.push(pin);
   renderPinList();
   updateMarker(pin);
