@@ -785,7 +785,7 @@ function addPinFromResult(r) {
   hideResults();
   document.getElementById('search-input').value = '';
   const id = 'pin-' + Date.now();
-  const pin = { id, name: r.display_name.split(',')[0], lat: parseFloat(r.lat), lng: parseFloat(r.lon), style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelPos:'right', showLabel:true, visible:true, pinSize:32, fontSize:14 };
+  const pin = { id, name: r.display_name.split(',')[0], lat: parseFloat(r.lat), lng: parseFloat(r.lon), style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14 };
   pins.push(pin);
   renderPinList();
   updateMarker(pin);
@@ -842,7 +842,8 @@ function addMarker(pin) {
       case 'top':    pos = `bottom:${pinH+gap}px;left:50%;transform:translateX(-50%);`; break;
       case 'bottom': pos = `top:${pinH+gap}px;left:50%;transform:translateX(-50%);`; break;
     }
-    lbl.style.cssText = `color:${pin.labelColor||'#1a1a1a'};font-size:${pin.fontSize||14}px;${pos}`;
+    const box = pin.labelBox ? 'background:rgba(255,255,255,0.92);padding:0.2em 0.5em;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.15);' : '';
+    lbl.style.cssText = `color:${pin.labelColor||'#1a1a1a'};font-size:${pin.fontSize||14}px;${box}${pos}`;
     el.appendChild(lbl);
   }
 
@@ -921,6 +922,13 @@ function makePinCard(pin) {
       </div>
     </div>
     <div class="ed-row" id="lpr-${pin.id}" style="${pin.showLabel?'':'opacity:0.3;pointer-events:none'}">
+      <div class="toggle-row-ed" style="margin-bottom:8px">
+        <span class="toggle-lbl">Boks rundt tekst</span>
+        <label class="tog">
+          <input type="checkbox" ${pin.labelBox?'checked':''} onchange="updateLabelBox('${pin.id}',this.checked)">
+          <div class="tog-track"></div>
+        </label>
+      </div>
       <div class="ed-lbl">Plassering av navn</div>
       <div class="lp-grid">
         <div class="lp-btn empty"></div>
@@ -992,6 +1000,10 @@ function updateStyle(id, style) {
   document.getElementById(`prev-${id}`).innerHTML = miniSVG(style, p.color);
   updateMarker(p);
 }
+function updateLabelBox(id, val) {
+  const p = getPin(id); p.labelBox = val;
+  updateMarker(p);
+}
 function updateShowLabel(id, show) {
   const p = getPin(id); p.showLabel = show;
   for (const rid of [`lpr-${id}`, `fs-row-${id}`]) {
@@ -1033,7 +1045,7 @@ function addPinCenter() {
   const visY = mapEl.clientHeight / 2;
   const lngLat = map.unproject([visX, visY]);
   const id = 'pin-' + Date.now();
-  const pin = { id, name:'Nytt sted', lat:lngLat.lat, lng:lngLat.lng, style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelPos:'right', showLabel:true, visible:true, pinSize:32, fontSize:14 };
+  const pin = { id, name:'Nytt sted', lat:lngLat.lat, lng:lngLat.lng, style:'teardrop', color:'#1E6B7A', labelColor:'#1a1a1a', labelPos:'right', showLabel:true, labelBox:false, visible:true, pinSize:32, fontSize:14 };
   pins.push(pin);
   renderPinList();
   updateMarker(pin);
