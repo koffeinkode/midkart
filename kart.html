@@ -65,9 +65,6 @@
     .ms-btn:hover { border-color: var(--border); color: var(--text); }
     .ms-btn.active { background: var(--border); color: #fff; border-color: var(--border); }
 
-    /* Midgard-only sections */
-    .midgard-only { display: none; }
-    .midgard-only.vis { display: block; }
 
     /* Theme colors */
     .tc-row { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
@@ -266,7 +263,7 @@
     /* Section collapse */
     .sec-title { cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
     .sec-title-text { flex: 1; }
-    .sec-chevron { font-size: 8px; color: var(--muted); transition: transform 0.15s; margin-left: 6px; }
+    .sec-chevron { font-size: 11px; color: var(--muted); transition: transform 0.15s; margin-left: 6px; line-height: 1; }
     .section.sec-collapsed .sec-chevron { transform: rotate(-90deg); }
     .section.sec-collapsed > *:not(:first-child) { display: none !important; }
     .sec-title:hover .sec-title-text { color: var(--text); }
@@ -282,6 +279,7 @@
       <h1>MidKart</h1>
       <p>Midgard Filmkommisjon — kartredaktør</p>
     </div>
+    <button class="sidebar-toggle" onclick="toggleAllSections()" id="collapse-all-btn" title="Kollaps / utvid alle seksjoner">▾</button>
     <button class="sidebar-toggle" onclick="toggleSidebar()" title="Skjul/vis panel">‹</button>
   </div>
 
@@ -292,14 +290,11 @@
       <div class="sec-title" onclick="toggleSection('kartstil')"><span class="sec-title-text">Kartstil</span><span class="sec-chevron">▾</span></div>
       <div class="style-grid-2">
         <button class="ms-btn active" onclick="setMapStyle('midgard',this)">Midgard</button>
-        <button class="ms-btn" onclick="setMapStyle('lys',this)">Lys</button>
-        <button class="ms-btn" onclick="setMapStyle('natur',this)">Natur</button>
-        <button class="ms-btn" onclick="setMapStyle('mork',this)">Mørk</button>
       </div>
     </div>
 
     <!-- Farger (kun Midgard) -->
-    <div class="section midgard-only" id="theme-section" data-sec="kartfarger">
+    <div class="section" id="theme-section" data-sec="kartfarger">
       <div class="sec-title" onclick="toggleSection('kartfarger')"><span class="sec-title-text">Kartfarger</span><span class="sec-chevron">▾</span></div>
       <div class="tc-row">
         <span class="tc-label">Hav</span>
@@ -320,7 +315,7 @@
     </div>
 
     <!-- Kartlag (kun Midgard) -->
-    <div class="section midgard-only" id="layer-section" data-sec="kartlag">
+    <div class="section" id="layer-section" data-sec="kartlag">
       <div class="sec-title" onclick="toggleSection('kartlag')"><span class="sec-title-text">Kartlag</span><span class="sec-chevron">▾</span></div>
       <div id="layer-toggles"></div>
     </div>
@@ -426,9 +421,6 @@ const SWATCHES = ['#1E6B7A','#72C4CC','#A8D5E2','#B8E4D8','#5C78B0','#E05050','#
 const PIN_STYLES = ['teardrop','circle','diamond','star','square'];
 const MAP_STYLES = {
   midgard: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-  lys:     'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-  natur:   'https://tiles.openfreemap.org/styles/liberty',
-  mork:    'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
 };
 const DEFAULT_THEME = { ocean: '#72C4CC', land: '#FFFFFF', text: '#1a1a1a' };
 
@@ -508,6 +500,18 @@ function toggleSection(key) {
   try { localStorage.setItem('midkart-sections', JSON.stringify(sectionState)); } catch(e) {}
 }
 
+function toggleAllSections() {
+  const sections = document.querySelectorAll('[data-sec]');
+  const anyOpen = [...sections].some(s => !s.classList.contains('sec-collapsed'));
+  sections.forEach(s => {
+    const key = s.dataset.sec;
+    s.classList.toggle('sec-collapsed', anyOpen);
+    sectionState[key] = anyOpen;
+  });
+  document.getElementById('collapse-all-btn').textContent = anyOpen ? '▸' : '▾';
+  try { localStorage.setItem('midkart-sections', JSON.stringify(sectionState)); } catch(e) {}
+}
+
 function initSections() {
   try { sectionState = JSON.parse(localStorage.getItem('midkart-sections') || '{}'); } catch(e) { sectionState = {}; }
   if (!('kartlag' in sectionState)) sectionState['kartlag'] = true;
@@ -584,7 +588,6 @@ map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 map.on('load', () => {
   document.querySelectorAll('.ms-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`.ms-btn[onclick*="${currentStyle}"]`)?.classList.add('active');
-  showMidgardSections(currentStyle === 'midgard');
   applyTheme();
   buildLayerGroups();
   applyLayerState();
@@ -726,9 +729,6 @@ function resetLayerState() {
   });
   applyLayerState();
 }
-function showMidgardSections(show) {
-  document.querySelectorAll('.midgard-only').forEach(el => el.classList.toggle('vis', show));
-}
 
 /* ============================================================
    MAP STYLE SWITCH
@@ -737,7 +737,6 @@ function setMapStyle(style, btn) {
   currentStyle = style;
   document.querySelectorAll('.ms-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  showMidgardSections(style === 'midgard');
   map.setStyle(MAP_STYLES[style]);
   map.once('styledata', () => {
     if (style === 'midgard') {
@@ -1051,7 +1050,6 @@ function resetAll() {
   currentStyle = 'midgard';
   document.querySelectorAll('.ms-btn').forEach((b,i) => b.classList.toggle('active', i===0));
   ['ocean','land','text'].forEach(k => { document.getElementById(`p-${k}`).value=theme[k]; document.getElementById(`h-${k}`).value=theme[k]; });
-  showMidgardSections(true);
   renderRegionList();
   map.setStyle(MAP_STYLES.midgard);
   map.once('styledata', () => {
