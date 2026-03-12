@@ -301,13 +301,13 @@
       <div class="sec-title" onclick="toggleSection('kartfarger')"><span class="sec-title-text">Kartfarger</span><span class="sec-chevron">▾</span></div>
       <div class="tc-row">
         <span class="tc-label">Hav</span>
-        <input type="color" class="tc-picker" id="p-ocean" value="#72C4CC" oninput="setTheme('ocean',this.value)">
-        <input type="text" class="tc-hex" id="h-ocean" value="#72C4CC" onchange="setTheme('ocean',this.value)">
+        <input type="color" class="tc-picker" id="p-ocean" value="#aaaaaa" oninput="setTheme('ocean',this.value)">
+        <input type="text" class="tc-hex" id="h-ocean" value="#aaaaaa" onchange="setTheme('ocean',this.value)">
       </div>
       <div class="tc-row">
         <span class="tc-label">Land</span>
-        <input type="color" class="tc-picker" id="p-land" value="#FFFFFF" oninput="setTheme('land',this.value)">
-        <input type="text" class="tc-hex" id="h-land" value="#FFFFFF" onchange="setTheme('land',this.value)">
+        <input type="color" class="tc-picker" id="p-land" value="#444444" oninput="setTheme('land',this.value)">
+        <input type="text" class="tc-hex" id="h-land" value="#444444" onchange="setTheme('land',this.value)">
       </div>
       <div class="tc-row">
         <span class="tc-label">Kart-tekst</span>
@@ -440,7 +440,7 @@ const CUSTOM_STYLE = 'custom';
 const MAP_STYLES = {
   midgard: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
 };
-const DEFAULT_THEME = { ocean: '#72C4CC', land: '#FFFFFF', text: '#1a1a1a' };
+const DEFAULT_THEME = { ocean: '#aaaaaa', land: '#444444', text: '#1a1a1a' };
 
 // Layer groups: each has a label and a match(sourceLayer, type, layerId) function
 // Priority order — first match wins
