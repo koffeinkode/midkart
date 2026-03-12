@@ -1514,6 +1514,9 @@ function liveGlobal() { applyGlobalStyle(); }
 /* ============================================================
    PRESETS
 ============================================================ */
+let pendingUpdateId = null;
+let pendingUpdateTimer = null;
+
 function savePreset() {
   const name = document.getElementById('preset-name').value.trim();
   if (!name) return;
@@ -1526,6 +1529,18 @@ function savePreset() {
 }
 
 function applyPreset(id) {
+  if (pendingUpdateId === id) {
+    updatePreset(id);
+    return;
+  }
+  cancelPendingUpdate();
+  if (id === activePresetId) {
+    pendingUpdateId = id;
+    const btn = document.getElementById(`preset-btn-${id}`);
+    if (btn) btn.textContent = 'Oppdater?';
+    pendingUpdateTimer = setTimeout(() => cancelPendingUpdate(), 3000);
+    return;
+  }
   const p = presets.find(x => x.id === id);
   if (!p) return;
   activePresetId = id;
@@ -1541,7 +1556,33 @@ function applyPreset(id) {
   saveState();
 }
 
+function updatePreset(id) {
+  clearTimeout(pendingUpdateTimer);
+  pendingUpdateId = null;
+  const p = presets.find(x => x.id === id);
+  if (!p) return;
+  p.theme = { ...theme };
+  p.layerState = { ...layerState };
+  saveState();
+  const btn = document.getElementById(`preset-btn-${id}`);
+  if (btn) {
+    btn.textContent = 'Lagret';
+    setTimeout(() => { if (btn) btn.textContent = p.name; }, 1200);
+  }
+}
+
+function cancelPendingUpdate() {
+  clearTimeout(pendingUpdateTimer);
+  if (pendingUpdateId) {
+    const p = presets.find(x => x.id === pendingUpdateId);
+    const btn = document.getElementById(`preset-btn-${pendingUpdateId}`);
+    if (btn && p) btn.textContent = p.name;
+    pendingUpdateId = null;
+  }
+}
+
 function deletePreset(id) {
+  cancelPendingUpdate();
   presets = presets.filter(p => p.id !== id);
   if (activePresetId === id) activePresetId = null;
   renderPresetList();
@@ -1560,9 +1601,10 @@ function renderPresetList() {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:5px;margin-bottom:4px;';
     const btn = document.createElement('button');
+    btn.id = `preset-btn-${p.id}`;
     btn.className = 'ms-btn' + (p.id === activePresetId ? ' active' : '');
     btn.style.cssText = 'flex:1;text-align:left;';
-    btn.textContent = p.name;
+    btn.textContent = p.id === pendingUpdateId ? 'Oppdater?' : p.name;
     btn.onclick = () => applyPreset(p.id);
     const del = document.createElement('button');
     del.className = 'pin-vis-btn';
