@@ -285,12 +285,15 @@
 
   <div class="sidebar-body">
 
-    <!-- Kartstil -->
+    <!-- Presets -->
     <div class="section" data-sec="kartstil">
-      <div class="sec-title" onclick="toggleSection('kartstil')"><span class="sec-title-text">Kartstil</span><span class="sec-chevron">▾</span></div>
-      <div class="style-grid-2">
-        <button class="ms-btn active" onclick="setMapStyle('midgard',this)">Midgard</button>
+      <div class="sec-title" onclick="toggleSection('kartstil')"><span class="sec-title-text">Presets</span><span class="sec-chevron">▾</span></div>
+      <div style="display:flex;gap:5px;margin-bottom:6px">
+        <input type="text" class="search-input" id="preset-name" placeholder="Navn på preset…"
+          onkeydown="if(event.key==='Enter')savePreset()" style="flex:1;font-size:11px">
+        <button class="search-btn" onclick="savePreset()">LAGRE</button>
       </div>
+      <div id="preset-list"></div>
     </div>
 
     <!-- Farger (kun Midgard) -->
@@ -443,7 +446,6 @@ const DEFAULT_LAYER_STATE = { terrain:false, borders:false, roads:false, nature:
 let theme       = { ...DEFAULT_THEME };
 let layerState  = { ...DEFAULT_LAYER_STATE };
 let layerIds    = {};
-let currentStyle = 'midgard';
 let exportW = 1920, exportH = 1080, exportFmt = 'jpeg';
 let frameActive = false;
 let searchTimer = null;
@@ -455,6 +457,8 @@ let regions = [];
 let regionCounter = 0;
 let markerMap = {};
 let _mapReady = false;
+let presets = [];
+let activePresetId = null;
 
 /* ============================================================
    PERSISTENCE
@@ -465,7 +469,7 @@ function saveState() {
   if (!_mapReady) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      pins, regions, regionCounter, currentStyle, theme, layerState,
+      pins, regions, regionCounter, presets, activePresetId, theme, layerState,
       mapCenter: map.getCenter(), mapZoom: map.getZoom()
     }));
   } catch(e) {}
@@ -486,7 +490,8 @@ function loadSavedState() {
   if (s.regionCounter) regionCounter = s.regionCounter;
   if (s.theme)       theme = s.theme;
   if (s.layerState)  layerState = s.layerState;
-  if (s.currentStyle) currentStyle = s.currentStyle;
+  if (s.presets)        presets = s.presets;
+  if (s.activePresetId !== undefined) activePresetId = s.activePresetId;
 })();
 
 /* ============================================================
@@ -580,7 +585,7 @@ function miniSVG(style, color) { return pinSVG(style, color, 18); }
 ============================================================ */
 const _saved = loadSavedState();
 const map = new maplibregl.Map({
-  container: 'map', style: MAP_STYLES[currentStyle] || MAP_STYLES.midgard,
+  container: 'map', style: MAP_STYLES.midgard,
   center: _saved?.mapCenter ? [_saved.mapCenter.lng, _saved.mapCenter.lat] : [3.5, 58],
   zoom: _saved?.mapZoom ?? 4.2, minZoom: 2, maxZoom: 14,
   preserveDrawingBuffer: true,
@@ -588,8 +593,6 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 map.on('load', () => {
-  document.querySelectorAll('.ms-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector(`.ms-btn[onclick*="${currentStyle}"]`)?.classList.add('active');
   applyTheme();
   buildLayerGroups();
   applyLayerState();
@@ -601,6 +604,7 @@ map.on('load', () => {
   renderAllMarkers();
   renderPinList();
   restoreRegions();
+  renderPresetList();
   initSections();
   _mapReady = true;
 });
@@ -615,7 +619,6 @@ function lighten(hex, a) {
   return `#${f(r)}${f(g)}${f(b)}`;
 }
 function applyTheme() {
-  if (currentStyle !== 'midgard') return;
   // Kill terrain/3D immediately
   try { map.setTerrain(null); } catch(e) {}
   const { ocean, land, text } = theme;
@@ -654,7 +657,7 @@ function setTheme(key, val) {
   theme[key] = val;
   document.getElementById(`p-${key}`).value = val;
   document.getElementById(`h-${key}`).value = val;
-  if (currentStyle === 'midgard') applyTheme();
+  applyTheme();
   saveState();
 }
 function resetTheme() {
@@ -663,7 +666,7 @@ function resetTheme() {
     document.getElementById(`p-${k}`).value = theme[k];
     document.getElementById(`h-${k}`).value = theme[k];
   });
-  if (currentStyle === 'midgard') applyTheme();
+  applyTheme();
   saveState();
 }
 
@@ -684,7 +687,6 @@ function buildLayerGroups() {
   });
 }
 function applyLayerState() {
-  if (currentStyle !== 'midgard') return;
   // Flatten 3D terrain unless terrain layer is toggled on
   try {
     if (layerState.terrain) {
@@ -732,26 +734,6 @@ function resetLayerState() {
   applyLayerState();
 }
 
-/* ============================================================
-   MAP STYLE SWITCH
-============================================================ */
-function setMapStyle(style, btn) {
-  currentStyle = style;
-  document.querySelectorAll('.ms-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  map.setStyle(MAP_STYLES[style]);
-  map.once('styledata', () => {
-    if (style === 'midgard') {
-      applyTheme();
-      buildLayerGroups();
-      applyLayerState();
-      buildLayerUI();
-    }
-    renderAllMarkers();
-    restoreRegions();
-    saveState();
-  });
-}
 
 /* ============================================================
    GEOCODING
@@ -1069,8 +1051,7 @@ function resetAll() {
   regions = []; regionCounter = 0;
   theme = { ...DEFAULT_THEME };
   layerState = { ...DEFAULT_LAYER_STATE };
-  currentStyle = 'midgard';
-  document.querySelectorAll('.ms-btn').forEach((b,i) => b.classList.toggle('active', i===0));
+  activePresetId = null;
   ['ocean','land','text'].forEach(k => { document.getElementById(`p-${k}`).value=theme[k]; document.getElementById(`h-${k}`).value=theme[k]; });
   renderRegionList();
   map.setStyle(MAP_STYLES.midgard);
@@ -1225,7 +1206,6 @@ function toggleSidebar() {
 }
 
 map.on('styledata', () => {
-  if (currentStyle !== 'midgard') return;
   try { map.setTerrain(null); } catch(e) {}
   (layerIds.terrain || []).forEach(id => {
     try { map.setLayoutProperty(id, 'visibility', layerState.terrain ? 'visible' : 'none'); } catch(e) {}
@@ -1405,6 +1385,69 @@ function applyGlobalStyle() {
   renderPinList();
 }
 function liveGlobal() { applyGlobalStyle(); }
+
+/* ============================================================
+   PRESETS
+============================================================ */
+function savePreset() {
+  const name = document.getElementById('preset-name').value.trim();
+  if (!name) return;
+  const id = 'preset-' + Date.now();
+  presets.push({ id, name, theme: { ...theme }, layerState: { ...layerState } });
+  activePresetId = id;
+  document.getElementById('preset-name').value = '';
+  renderPresetList();
+  saveState();
+}
+
+function applyPreset(id) {
+  const p = presets.find(x => x.id === id);
+  if (!p) return;
+  activePresetId = id;
+  theme = { ...p.theme };
+  layerState = { ...p.layerState };
+  ['ocean','land','text'].forEach(k => {
+    document.getElementById(`p-${k}`).value = theme[k];
+    document.getElementById(`h-${k}`).value = theme[k];
+  });
+  applyTheme();
+  applyLayerState();
+  renderPresetList();
+  saveState();
+}
+
+function deletePreset(id) {
+  presets = presets.filter(p => p.id !== id);
+  if (activePresetId === id) activePresetId = null;
+  renderPresetList();
+  saveState();
+}
+
+function renderPresetList() {
+  const list = document.getElementById('preset-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!presets.length) {
+    list.innerHTML = '<div style="font-size:10px;color:var(--muted);padding:2px 0 4px">Ingen presets lagret ennå</div>';
+    return;
+  }
+  presets.forEach(p => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:5px;margin-bottom:4px;';
+    const btn = document.createElement('button');
+    btn.className = 'ms-btn' + (p.id === activePresetId ? ' active' : '');
+    btn.style.cssText = 'flex:1;text-align:left;';
+    btn.textContent = p.name;
+    btn.onclick = () => applyPreset(p.id);
+    const del = document.createElement('button');
+    del.className = 'pin-vis-btn';
+    del.textContent = '×';
+    del.onclick = () => deletePreset(p.id);
+    row.appendChild(btn);
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+}
 
 document.getElementById('g-lcolor').addEventListener('input', function() {
   document.getElementById('g-lcolor-txt').value = this.value;
