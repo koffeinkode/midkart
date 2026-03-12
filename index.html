@@ -121,7 +121,7 @@
     .search-results.vis { display: block; }
     .sr-item { padding: 7px 10px; font-size: 10px; color: var(--muted); cursor: pointer; border-bottom: 1px solid var(--divider); font-family: var(--mono); }
     .sr-item:last-child { border-bottom: none; }
-    .sr-item:hover { background: var(--bg); color: var(--text); }
+    .sr-item:hover, .sr-item.active { background: var(--bg); color: var(--text); }
     .sr-item strong { display: block; color: var(--text); font-size: 11px; }
     .sr-empty { padding: 9px 10px; font-size: 10px; color: var(--muted); }
 
@@ -320,11 +320,14 @@
     <!-- Regioner -->
     <div class="section" id="region-section">
       <div class="sec-title">Fargelagte regioner</div>
-      <div class="search-row" style="margin-bottom:6px">
-        <input type="color" class="tc-picker" id="region-color" value="#72C4CC" title="Velg farge" style="flex-shrink:0">
-        <input type="text" class="search-input" id="region-input" placeholder="Søk region, fylke…"
-          onkeydown="if(event.key==='Enter')addRegionFromInput()" autocomplete="off">
-        <button class="search-btn" id="region-btn" onclick="addRegionFromInput()">+</button>
+      <div class="search-wrap" style="margin-bottom:6px">
+        <div class="search-row">
+          <input type="color" class="tc-picker" id="region-color" value="#72C4CC" title="Velg farge" style="flex-shrink:0">
+          <input type="text" class="search-input" id="region-input" placeholder="Søk kommune, øygruppe…"
+            oninput="onRegionInput(this.value)" onkeydown="onRegionKey(event)" autocomplete="off">
+          <button class="search-btn" id="region-btn" onclick="addRegionFromInput()">+</button>
+        </div>
+        <div class="search-results" id="region-results"></div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
         <span style="font-size:9px;color:var(--muted);width:52px;flex-shrink:0">Gjennomsikt</span>
@@ -1134,9 +1137,76 @@ document.getElementById('region-opacity').addEventListener('input', function() {
   document.getElementById('region-opacity-val').textContent = this.value + '%';
 });
 
+let regionSuggestTimer = null;
+let regionSuggestions = [];
+let regionSuggestIdx = -1;
+
+function onRegionInput(val) {
+  clearTimeout(regionSuggestTimer);
+  if (val.length < 2) { hideRegionResults(); return; }
+  regionSuggestTimer = setTimeout(() => fetchRegionSuggestions(val), 280);
+}
+
+function onRegionKey(e) {
+  const box = document.getElementById('region-results');
+  const items = box.querySelectorAll('.sr-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); regionSuggestIdx = Math.min(regionSuggestIdx + 1, items.length - 1); highlightRegionItem(items); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); regionSuggestIdx = Math.max(regionSuggestIdx - 1, 0); highlightRegionItem(items); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (regionSuggestIdx >= 0 && regionSuggestions[regionSuggestIdx]) { selectRegionSuggestion(regionSuggestions[regionSuggestIdx]); } else { addRegionFromInput(); } }
+  else if (e.key === 'Escape') { hideRegionResults(); }
+}
+
+function highlightRegionItem(items) {
+  items.forEach((el, i) => el.classList.toggle('active', i === regionSuggestIdx));
+  if (items[regionSuggestIdx]) items[regionSuggestIdx].scrollIntoView({ block: 'nearest' });
+}
+
+async function fetchRegionSuggestions(q) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=geojson&polygon_geojson=1&limit=6&countrycodes=no`);
+    const data = await r.json();
+    regionSuggestions = (data.features || []).filter(f => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
+    if (!regionSuggestions.length) { hideRegionResults(); return; }
+    const box = document.getElementById('region-results');
+    regionSuggestIdx = -1;
+    box.innerHTML = '';
+    regionSuggestions.forEach((f, i) => {
+      const parts = f.properties.display_name.split(', ');
+      const name = parts[0];
+      const sub = parts.slice(1, 3).join(', ');
+      const div = document.createElement('div');
+      div.className = 'sr-item';
+      div.innerHTML = `<strong>${name}</strong>${sub ? sub : ''}`;
+      div.addEventListener('mousedown', e => { e.preventDefault(); selectRegionSuggestion(f); });
+      box.appendChild(div);
+    });
+    box.classList.add('vis');
+  } catch(e) {}
+}
+
+function selectRegionSuggestion(feature) {
+  const name = feature.properties.display_name.split(', ')[0];
+  const color = document.getElementById('region-color').value;
+  const opacity = (+document.getElementById('region-opacity').value) / 100;
+  const id = 'region-' + (++regionCounter);
+  const region = { id, name, color, opacity, geojson: feature };
+  regions.push(region);
+  applyRegion(region);
+  renderRegionList();
+  document.getElementById('region-input').value = '';
+  hideRegionResults();
+}
+
+function hideRegionResults() {
+  document.getElementById('region-results').classList.remove('vis');
+  regionSuggestions = [];
+  regionSuggestIdx = -1;
+}
+
 async function addRegionFromInput() {
   const name = document.getElementById('region-input').value.trim();
   if (!name) return;
+  if (regionSuggestions.length) { selectRegionSuggestion(regionSuggestions[0]); return; }
   const color = document.getElementById('region-color').value;
   const opacity = (+document.getElementById('region-opacity').value) / 100;
   const btn = document.getElementById('region-btn');
